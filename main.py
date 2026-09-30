@@ -13,7 +13,7 @@ app = FastAPI(
 # Render 대시보드의 Environment Variables에 SKYFIRE_SELLER_API_KEY를 추가하거나,
 # 아래 따옴표 안에 발급받은 Skyfire Seller API Key를 직접 넣으세요.
 # ------------------------------------------------------------------
-SKYFIRE_SELLER_API_KEY = os.getenv("9350cb7f-f9cc-4bf8-9c1e-cbed90c1c900")
+SKYFIRE_SELLER_API_KEY = os.getenv("7c022faf-b3de-4db6-9cfb-e66e49ca9ada")
 
 def verify_and_charge_skyfire_token(
     skyfire_pay_id: str = Header(None, alias="skyfire-pay-id"),
