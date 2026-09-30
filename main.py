@@ -1,38 +1,54 @@
 from fastapi import FastAPI, Header, HTTPException, Depends
-import requests
+from pydantic import BaseModel
 import os
 
-app = FastAPI(title="Agent Revenue API")
+app = FastAPI(
+    title="AI Agent Market Data API",
+    description="AI 에이전트 전용 유료 데이터 API입니다. 건당 $0.001 소액 결제 후 이용 가능합니다.",
+    version="1.0.0"
+)
 
-# 환경 변수로 API 키 관리 (지갑/판매자 키)
-MY_SELLER_API_KEY = os.getenv("MY_SELLER_API_KEY", "default_test_key")
+# 내 결제 수신 지갑 주소 (USDC/EVM 지갑 주소 예시)
+SELLER_WALLET_ADDRESS = "0xYourWalletAddressHere"
 
 def verify_agent_payment(x_agent_token: str = Header(..., alias="X-Agent-Token")):
     """
-    AI 에이전트가 헤더로 보낸 토큰을 검증하는 로직
+    외부 AI 에이전트가 보낸 결제 증명 토큰을 검증합니다.
     """
-    # 테스트용: 토큰이 'valid-agent-token'이면 결제 승인
-    if x_agent_token == "valid-agent-token":
-        return True
+    # 실제 연동 시: Skyfire SDK 또는 AgentKit/x402 검증 로직 실행
+    # 예: if not skyfire.verify(x_agent_token): raise HTTPException(...)
     
-    # 실제 연동 시 Skyfire / AgentKit 등 검증 서버에 확인
-    # response = requests.post("https://api.skyfire.xyz/v1/tokens/charge", ...)
-    
-    raise HTTPException(status_code=402, detail="Payment Required: Invalid agent token")
+    if not x_agent_token or len(x_agent_token) < 5:
+        raise HTTPException(
+            status_code=402, 
+            detail={
+                "error": "Payment Required",
+                "price_usd": 0.001,
+                "pay_to": SELLER_WALLET_ADDRESS,
+                "message": "Valid X-Agent-Token is required."
+            }
+        )
+    return True
 
 @app.get("/")
 def home():
-    return {"message": "AI Agent API Server is Running!"}
+    return {
+        "service": "AI Agent Market Data API",
+        "price_per_call": "$0.001 USD",
+        "docs_for_agents": "/openapi.json"
+    }
 
-@app.get("/api/v1/data", dependencies=[Depends(verify_agent_payment)])
-def get_data(symbol: str = "BTC"):
+@app.get("/api/v1/market-analysis", dependencies=[Depends(verify_agent_payment)])
+def get_market_analysis(symbol: str = "BTC"):
     """
-    결제가 확인된 에이전트에만 제공하는 유료 데이터
+    AI 에이전트에게 전달할 고급 시장 분석 데이터
     """
     return {
         "status": "success",
-        "symbol": symbol,
-        "price_usd": 95000,
-        "signal": "HOLD",
-        "message": "Payment verified. Thank you for using the agent API."
+        "symbol": symbol.upper(),
+        "sentiment": "Bullish",
+        "confidence": 0.88,
+        "recommendation": "BUY",
+        "target_price": 98000,
+        "timestamp": "2026-10-01T02:00:00Z"
     }
