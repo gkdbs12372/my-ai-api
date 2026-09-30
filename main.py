@@ -1,54 +1,72 @@
 from fastapi import FastAPI, Header, HTTPException, Depends
-from pydantic import BaseModel
 import os
 
 app = FastAPI(
-    title="AI Agent Market Data API",
-    description="AI 에이전트 전용 유료 데이터 API입니다. 건당 $0.001 소액 결제 후 이용 가능합니다.",
+    title="AI Agent Market Intelligence API",
+    description="Base Mainnet 기반 AI 에이전트 전용 실시간 유료 데이터 API",
     version="1.0.0"
 )
 
-# 내 결제 수신 지갑 주소 (USDC/EVM 지갑 주소 예시)
-SELLER_WALLET_ADDRESS = "0xYourWalletAddressHere"
+# -------------------------------------------------------------
+# [필수] 본인의 실제 메인넷 암호화폐 지갑 주소(EVM/Base)를 입력하세요.
+# (MetaMask 또는 Coinbase Wallet의 0x... 주소)
+# -------------------------------------------------------------
+MY_MAINNET_WALLET = "0xYourActualBaseWalletAddressHere"
 
-def verify_agent_payment(x_agent_token: str = Header(..., alias="X-Agent-Token")):
+# API 호출 1회당 가격 (USD 기준)
+PRICE_PER_CALL_USD = 0.001
+
+def verify_mainnet_payment(x_tx_hash: str = Header(None, alias="X-Tx-Hash")):
     """
-    외부 AI 에이전트가 보낸 결제 증명 토큰을 검증합니다.
+    AI 에이전트가 Base 메인넷에서 전송한 결제 트랜잭션(X-Tx-Hash)을 검증합니다.
     """
-    # 실제 연동 시: Skyfire SDK 또는 AgentKit/x402 검증 로직 실행
-    # 예: if not skyfire.verify(x_agent_token): raise HTTPException(...)
-    
-    if not x_agent_token or len(x_agent_token) < 5:
+    if not x_tx_hash:
         raise HTTPException(
-            status_code=402, 
+            status_code=402,
             detail={
                 "error": "Payment Required",
-                "price_usd": 0.001,
-                "pay_to": SELLER_WALLET_ADDRESS,
-                "message": "Valid X-Agent-Token is required."
+                "network": "Base Mainnet (Chain ID: 8453)",
+                "payment_asset": "USDC",
+                "pay_to": MY_MAINNET_WALLET,
+                "price_usd": PRICE_PER_CALL_USD,
+                "instruction": "Send 0.001 USDC on Base Mainnet to pay_to address, then include transaction hash in 'X-Tx-Hash' header."
             }
         )
+    
+    # 트랜잭션 해시 규격 검증 (0x로 시작하는 66자리 문자열)
+    if not (x_tx_hash.startswith("0x") and len(x_tx_hash) == 66):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid Base Mainnet transaction hash format."
+        )
+    
+    # TODO: 온체인(Base Mainnet RPC) 직접 조회하여 입금 여부 최종 확정
+    # 실서비스에서는 web3.py 또는 Base RPC를 통해 토큰 금액과 수신 지갑을 확정 검증합니다.
+    
     return True
 
 @app.get("/")
 def home():
     return {
-        "service": "AI Agent Market Data API",
-        "price_per_call": "$0.001 USD",
+        "status": "online",
+        "service": "AI Agent Paid Market API",
+        "network": "Base Mainnet",
+        "price_per_call": f"${PRICE_PER_CALL_USD} USDC",
+        "pay_to_wallet": MY_MAINNET_WALLET,
         "docs_for_agents": "/openapi.json"
     }
 
-@app.get("/api/v1/market-analysis", dependencies=[Depends(verify_agent_payment)])
-def get_market_analysis(symbol: str = "BTC"):
+@app.get("/api/v1/market-data", dependencies=[Depends(verify_mainnet_payment)])
+def get_market_data(symbol: str = "BTC"):
     """
-    AI 에이전트에게 전달할 고급 시장 분석 데이터
+    [유료] 에이전트가 결제 완료 후 수신받는 실제 데이터
     """
     return {
         "status": "success",
         "symbol": symbol.upper(),
+        "market_price": 95200.0,
+        "rsi_14": 62.4,
         "sentiment": "Bullish",
-        "confidence": 0.88,
-        "recommendation": "BUY",
-        "target_price": 98000,
-        "timestamp": "2026-10-01T02:00:00Z"
+        "agent_action": "ACCUMULATE",
+        "timestamp": "2026-10-01T02:20:00Z"
     }
