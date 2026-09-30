@@ -9,7 +9,7 @@ app = FastAPI(
     version="1.1.0"
 )
 
-SKYFIRE_SELLER_API_KEY = os.getenv("7c022faf-b3de-4db6-9cfb-e66e49ca9ada", "")
+SKYFIRE_SELLER_API_KEY = os.getenv("SKYFIRE_SELLER_API_KEY", "")
 
 # 응답 데이터 형식 정의
 class MarketDataResponse(BaseModel):
