@@ -21,65 +21,87 @@ class MarketDataResponse(BaseModel):
 
 def get_crypto_price_and_rsi(symbol: str):
     """
-    외부 거래소/데이터 API를 통해 요청받은 코인의 실시간 시세 및 RSI를 계산/조회하는 함수
+    CoinGecko API를 사용하여 안정적으로 실시간 코인 시세를 가져오는 함수
     """
-    symbol_upper = symbol.upper()
+    symbol_lower = symbol.lower()
     
-    # Binance Public API 예시 (USDT 마켓 기준)
-    pair = f"{symbol_upper}USDT"
-    url = f"https://api.binance.com/api/v3/ticker/price?symbol={pair}"
+    # 코인 심볼 -> CoinGecko ID 매핑
+    symbol_map = {
+        "btc": "bitcoin",
+        "eth": "ethereum",
+        "sol": "solana",
+        "xrp": "ripple"
+    }
+    
+    coin_id = symbol_map.get(symbol_lower, symbol_lower)
+    
+    # CoinGecko Public API 호출
+    url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=usd"
     
     try:
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, headers={"accept": "application/json"}, timeout=10)
+        
         if res.status_code != 200:
-            raise HTTPException(status_code=404, detail=f"Crypto symbol '{symbol_upper}' not found or unsupported.")
+            raise HTTPException(status_code=500, detail=f"External crypto API error ({res.status_code})")
         
         data = res.json()
-        price = float(data["price"])
         
-        # 간단한 RSI 및 Signal 시뮬레이션 계산 logic
-        # (실제 프로젝트 시 klines API를 활용해 14일봉 RSI를 정밀 계산하도록 고도화 가능)
-        rsi = 55.4  # 예시 지표값
+        if coin_id not in data or "usd" not in data[coin_id]:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Crypto symbol '{symbol.upper()}' is unsupported. Try BTC, ETH, SOL, or XRP."
+            )
+        
+        price = float(data[coin_id]["usd"])
+        
+        # 시장 지표 계산 (시뮬레이션 예시값)
+        rsi = 58.5
         signal = "ACCUMULATE" if rsi < 60 else "HOLD"
         
         return {
-            "symbol": symbol_upper,
+            "symbol": symbol.upper(),
             "price_usd": price,
             "rsi_14": rsi,
             "signal": signal,
-            "recommendation": f"Current market condition for {symbol_upper} indicates {signal}."
+            "recommendation": f"Current market condition for {symbol.upper()} indicates {signal}."
         }
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch market data: {str(e)}")
+
 
 @app.get("/market-data", response_model=MarketDataResponse)
 def get_market_data(
     symbol: str = Query("BTC", description="Crypto symbol (e.g. BTC, ETH, SOL, XRP)"),
-    skyfire_pay_id: str = Header(None, alias="skyfire-pay-id"),
-    x_agent_token: str = Header(None, alias="X-Agent-Token")
+    # Skyfire 권장사항 2 & 3: 최신 'kyapay-token' 헤더 사용 및 필수값(required=True) 설정
+    kyapay_token: str = Header(..., alias="kyapay-token", description="Skyfire KYAPay Payment Token")
 ):
     """
     Skyfire 과금 인증 후 요청된 코인의 실시간 시장 데이터를 반환합니다.
     """
-    payment_token = skyfire_pay_id or x_agent_token
+    # 1. 결제 토큰 검증 및 차감 (/charge)
+    if not SKYFIRE_SELLER_API_KEY:
+        raise HTTPException(status_code=500, detail="Server configuration error: SKYFIRE_SELLER_API_KEY missing")
+
+    charge_url = "https://api.skyfire.xyz/v1/charge"
+    headers = {
+        "skyfire-api-key": SKYFIRE_SELLER_API_KEY,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "token": kyapay_token,
+        "amount": "0.001"
+    }
     
-    # Skyfire 토큰 차감/결제 검증 API 호출 (/charge)
-    if payment_token and SKYFIRE_SELLER_API_KEY:
-        charge_url = "https://api.skyfire.xyz/v1/charge"
-        headers = {
-            "skyfire-api-key": SKYFIRE_SELLER_API_KEY,
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "token": payment_token,
-            "amount": "0.001"
-        }
-        try:
-            charge_res = requests.post(charge_url, json=payload, headers=headers, timeout=5)
-            if charge_res.status_code != 200:
-                raise HTTPException(status_code=402, detail="Skyfire Payment Verification Failed")
-        except Exception:
-            raise HTTPException(status_code=402, detail="Payment Processing Error")
-    
-    # 코인 정보 가져오기 및 응답
+    try:
+        charge_res = requests.post(charge_url, json=payload, headers=headers, timeout=5)
+        if charge_res.status_code != 200:
+            raise HTTPException(status_code=402, detail="Skyfire Payment Verification Failed: Invalid or insufficient token")
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=402, detail=f"Payment Processing Error: {str(e)}")
+
+    # 2. 결제 성공 시 최신 코인 정보 반환
     return get_crypto_price_and_rsi(symbol)
